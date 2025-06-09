@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CHINACNU 收支记录系统</title>
+  <title>CHINACNU 收支记录系统 (Firestore版)</title>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <style>
     body {
       font-family: 'Roboto', '微软雅黑', sans-serif;
@@ -52,7 +52,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>CHINACNU Steel - 收支记录系统</h1>
+    <h1>CHINACNU Steel - 收支记录系统（Firestore）</h1>
     <div>
       <input id="orderId" placeholder="订单名称">
       <select id="type">
@@ -69,74 +69,67 @@
 
   <script>
     const firebaseConfig = {
-      databaseURL: "https://your-project-id.firebaseio.com"
-    };
+  apiKey: "AIzaSyBCpgUUSWPRYVtRfk15OQTHYHPNT5LLuqU",
+  authDomain: "zhichu-a068a.firebaseapp.com",
+  projectId: "zhichu-a068a",
+  storageBucket: "zhichu-a068a.appspot.com",
+  messagingSenderId: "970820346863",
+  appId: "1:970820346863:web:89c157766965483124c1a"
+};
     firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
+    const db = firebase.firestore();
 
-    function addRecord() {
+    async function addRecord() {
       const orderId = document.getElementById('orderId').value;
       const type = document.getElementById('type').value;
-      const amount = document.getElementById('amount').value;
+      const amount = parseFloat(document.getElementById('amount').value);
       const note = document.getElementById('note').value;
-      const date = new Date().toLocaleString();
+      const date = new Date().toISOString();
 
-      const ref = db.ref('orders/' + orderId + '/' + type).push();
-      ref.set({ amount: parseFloat(amount), note: note, date: date });
+      await db.collection("orders").doc(orderId).collection(type).add({ amount, note, date });
       alert("记录已保存");
       displayRecords();
     }
 
-    function displayRecords() {
+    async function displayRecords() {
       const container = document.getElementById('records');
-      db.ref('orders').once('value', snapshot => {
-        let html = '<table><tr><th>订单</th></tr>';
-        snapshot.forEach(orderSnap => {
-          const orderId = orderSnap.key;
-          html += `<tr><td><span class="order-link" onclick="showDetails('${orderId}')">${orderId}</span></td></tr>`;
-        });
-        html += '</table>';
-        container.innerHTML = html;
+      const snapshot = await db.collection("orders").get();
+      let html = '<table><tr><th>订单</th></tr>';
+      snapshot.forEach(doc => {
+        html += `<tr><td><span class="order-link" onclick="showDetails('${doc.id}')">${doc.id}</span></td></tr>`;
       });
+      html += '</table>';
+      container.innerHTML = html;
     }
 
-    function showDetails(orderId) {
+    async function showDetails(orderId) {
       const container = document.getElementById('details');
-      db.ref('orders/' + orderId).once('value', snapshot => {
-        const data = snapshot.val();
-        let entries = [];
-        let totalIncome = 0;
-        let totalExpense = 0;
+      let entries = [];
+      let totalIncome = 0;
+      let totalExpense = 0;
 
-        ['income', 'expense'].forEach(type => {
-          const records = data[type] || {};
-          for (let key in records) {
-            const item = records[key];
-            entries.push({
-              type: type,
-              amount: item.amount,
-              note: item.note,
-              date: item.date
-            });
-            if (type === 'income') totalIncome += item.amount;
-            else totalExpense += item.amount;
-          }
+      for (const type of ["income", "expense"]) {
+        const snap = await db.collection("orders").doc(orderId).collection(type).get();
+        snap.forEach(doc => {
+          const data = doc.data();
+          entries.push({ type, ...data });
+          if (type === 'income') totalIncome += data.amount;
+          else totalExpense += data.amount;
         });
+      }
 
-        entries.sort((a, b) => new Date(a.date) - new Date(b.date));
-        let html = `<h2>订单详情：${orderId}</h2>`;
-        html += `<p>总收入：<b>${totalIncome}</b> 元 | 总支出：<b>${totalExpense}</b> 元 | 利润：<b>${totalIncome - totalExpense}</b> 元</p>`;
-        html += '<table><tr><th>类型</th><th>金额</th><th>备注</th><th>时间</th></tr>';
-        entries.forEach(item => {
-          html += `<tr><td>${item.type === 'income' ? '收入' : '支出'}</td><td>${item.amount}</td><td>${item.note}</td><td>${item.date}</td></tr>`;
-        });
-        html += '</table>';
-        container.innerHTML = html;
+      entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+      let html = `<h2>订单详情：${orderId}</h2>`;
+      html += `<p>总收入：<b>${totalIncome}</b> 元 | 总支出：<b>${totalExpense}</b> 元 | 利润：<b>${totalIncome - totalExpense}</b> 元</p>`;
+      html += '<table><tr><th>类型</th><th>金额</th><th>备注</th><th>时间</th></tr>';
+      entries.forEach(item => {
+        html += `<tr><td>${item.type === 'income' ? '收入' : '支出'}</td><td>${item.amount}</td><td>${item.note}</td><td>${new Date(item.date).toLocaleString()}</td></tr>`;
       });
+      html += '</table>';
+      container.innerHTML = html;
     }
 
     displayRecords();
   </script>
 </body>
 </html>
-
