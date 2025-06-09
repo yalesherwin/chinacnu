@@ -69,37 +69,52 @@
 
   <script>
     const firebaseConfig = {
-  apiKey: "AIzaSyBCpgUUSWPRYVtRfk15OQTHYHPNT5LLuqU",
-  authDomain: "zhichu-a068a.firebaseapp.com",
-  projectId: "zhichu-a068a",
-  storageBucket: "zhichu-a068a.appspot.com",
-  messagingSenderId: "970820346863",
-  appId: "1:970820346863:web:89c157766965483124c1a"
-};
+      apiKey: "AIzaSyBCpgUUSWPRYVtRfk15OQTHYHPNT5LLuqU",
+      authDomain: "zhichu-a068a.firebaseapp.com",
+      projectId: "zhichu-a068a",
+      storageBucket: "zhichu-a068a.appspot.com",
+      messagingSenderId: "970820346863",
+      appId: "1:970820346863:web:89c157766965483124c1a"
+    };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
     async function addRecord() {
-      const orderId = document.getElementById('orderId').value;
+      const orderId = document.getElementById('orderId').value.trim();
       const type = document.getElementById('type').value;
       const amount = parseFloat(document.getElementById('amount').value);
-      const note = document.getElementById('note').value;
+      const note = document.getElementById('note').value.trim();
       const date = new Date().toISOString();
 
-      await db.collection("orders").doc(orderId).collection(type).add({ amount, note, date });
-      alert("记录已保存");
-      displayRecords();
+      if (!orderId || isNaN(amount)) {
+        alert('请输入订单名称和有效金额');
+        return;
+      }
+
+      try {
+        await db.collection("orders").doc(orderId).collection(type).add({ amount, note, date });
+        alert("✅ 记录已保存");
+        displayRecords();
+      } catch (error) {
+        console.error("❌ 添加失败:", error);
+        alert("❌ 添加记录失败，请检查控制台或数据库权限");
+      }
     }
 
     async function displayRecords() {
       const container = document.getElementById('records');
-      const snapshot = await db.collection("orders").get();
-      let html = '<table><tr><th>订单</th></tr>';
-      snapshot.forEach(doc => {
-        html += `<tr><td><span class="order-link" onclick="showDetails('${doc.id}')">${doc.id}</span></td></tr>`;
-      });
-      html += '</table>';
-      container.innerHTML = html;
+      try {
+        const snapshot = await db.collection("orders").get();
+        let html = '<table><tr><th>订单</th></tr>';
+        snapshot.forEach(doc => {
+          html += `<tr><td><span class="order-link" onclick="showDetails('${doc.id}')">${doc.id}</span></td></tr>`;
+        });
+        html += '</table>';
+        container.innerHTML = html;
+      } catch (error) {
+        console.error("❌ 加载订单失败:", error);
+        container.innerHTML = '<p style="color:red">无法加载订单，请检查网络或数据库设置。</p>';
+      }
     }
 
     async function showDetails(orderId) {
@@ -108,25 +123,30 @@
       let totalIncome = 0;
       let totalExpense = 0;
 
-      for (const type of ["income", "expense"]) {
-        const snap = await db.collection("orders").doc(orderId).collection(type).get();
-        snap.forEach(doc => {
-          const data = doc.data();
-          entries.push({ type, ...data });
-          if (type === 'income') totalIncome += data.amount;
-          else totalExpense += data.amount;
-        });
-      }
+      try {
+        for (const type of ["income", "expense"]) {
+          const snap = await db.collection("orders").doc(orderId).collection(type).get();
+          snap.forEach(doc => {
+            const data = doc.data();
+            entries.push({ type, ...data });
+            if (type === 'income') totalIncome += data.amount;
+            else totalExpense += data.amount;
+          });
+        }
 
-      entries.sort((a, b) => new Date(a.date) - new Date(b.date));
-      let html = `<h2>订单详情：${orderId}</h2>`;
-      html += `<p>总收入：<b>${totalIncome}</b> 元 | 总支出：<b>${totalExpense}</b> 元 | 利润：<b>${totalIncome - totalExpense}</b> 元</p>`;
-      html += '<table><tr><th>类型</th><th>金额</th><th>备注</th><th>时间</th></tr>';
-      entries.forEach(item => {
-        html += `<tr><td>${item.type === 'income' ? '收入' : '支出'}</td><td>${item.amount}</td><td>${item.note}</td><td>${new Date(item.date).toLocaleString()}</td></tr>`;
-      });
-      html += '</table>';
-      container.innerHTML = html;
+        entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+        let html = `<h2>订单详情：${orderId}</h2>`;
+        html += `<p>总收入：<b>${totalIncome}</b> 元 | 总支出：<b>${totalExpense}</b> 元 | 利润：<b>${totalIncome - totalExpense}</b> 元</p>`;
+        html += '<table><tr><th>类型</th><th>金额</th><th>备注</th><th>时间</th></tr>';
+        entries.forEach(item => {
+          html += `<tr><td>${item.type === 'income' ? '收入' : '支出'}</td><td>${item.amount}</td><td>${item.note}</td><td>${new Date(item.date).toLocaleString()}</td></tr>`;
+        });
+        html += '</table>';
+        container.innerHTML = html;
+      } catch (error) {
+        console.error("❌ 加载明细失败:", error);
+        container.innerHTML = '<p style="color:red">无法加载订单明细，请稍后重试。</p>';
+      }
     }
 
     displayRecords();
