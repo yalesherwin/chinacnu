@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CHINACNU Steel - 收支记录系统（Firestore）</title>
+  <title>CHINACNU Steel - 收支记录系统（Firestore 扁平版）</title>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <style>
@@ -52,7 +52,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>CHINACNU Steel - 收支记录系统（Firestore）</h1>
+    <h1>CHINACNU Steel - 收支记录系统（扁平版）</h1>
     <div>
       <input id="orderId" placeholder="订单名称">
       <select id="type">
@@ -68,7 +68,7 @@
   </div>
 
   <script>
-    // ====== Firebase 初始化 ======
+    // —— 初始化 Firebase ——
     const firebaseConfig = {
       apiKey: "AIzaSyBCpgUUSWPRYVtRfk15OQTHYHPNT5LLuqU",
       authDomain: "zhichu-a068a.firebaseapp.com",
@@ -80,7 +80,10 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    // ====== 添加记录：先创建/更新父文档，再写入子集合 ======
+    // 本地缓存所有记录
+    let allRecords = [];
+
+    // 添加新记录到顶级 collections/records
     async function addRecord() {
       const orderId = document.getElementById('orderId').value.trim();
       const type    = document.getElementById('type').value;
@@ -94,78 +97,69 @@
       }
 
       try {
-        // 1. 确保父文档存在（用于列表展示）
-        const orderRef = db.collection("orders").doc(orderId);
-        await orderRef.set({ lastUpdate: date }, { merge: true });
-
-        // 2. 写入子集合（income 或 expense）
-        await orderRef.collection(type).add({ amount, note, date });
-
+        await db.collection("records").add({
+          orderId,
+          type,
+          amount,
+          note,
+          date
+        });
         alert("✅ 记录已保存");
         displayRecords();
       } catch (error) {
-        console.error("❌ 添加失败，错误详情：", error);
+        console.error("❌ 添加失败：", error);
         alert("❌ 添加记录失败，请查看控制台");
       }
     }
 
-    // ====== 列出所有订单（父文档） ======
+    // 拉取所有记录，提取唯一 orderId 列表并展示
     async function displayRecords() {
-      const container = document.getElementById('records');
       try {
-        const snapshot = await db.collection("orders").get();
+        const snap = await db.collection("records").get();
+        allRecords = snap.docs.map(doc => doc.data());
+        const orderIds = [...new Set(allRecords.map(r => r.orderId))];
+        
         let html = '<table><tr><th>订单</th></tr>';
-        snapshot.forEach(doc => {
-          html += `<tr><td><span class="order-link" onclick="showDetails('${doc.id}')">${doc.id}</span></td></tr>`;
+        orderIds.forEach(id => {
+          html += `<tr><td><span class="order-link" onclick="showDetails('${id}')">${id}</span></td></tr>`;
         });
         html += '</table>';
-        container.innerHTML = html;
+        document.getElementById('records').innerHTML = html;
+        document.getElementById('details').innerHTML = '';
       } catch (error) {
-        console.error("❌ 加载订单失败:", error);
-        container.innerHTML = '<p style="color:red">无法加载订单，请检查网络或数据库设置。</p>';
+        console.error("❌ 加载订单失败：", error);
+        document.getElementById('records').innerHTML =
+          '<p style="color:red">无法加载订单，请检查网络或规则设置。</p>';
       }
     }
 
-    // ====== 显示某个订单的明细（收入/支出条目） ======
-    async function showDetails(orderId) {
-      const container = document.getElementById('details');
-      let entries = [];
-      let totalIncome = 0;
-      let totalExpense = 0;
+    // 根据 orderId 过滤本地缓存并渲染明细
+    function showDetails(orderId) {
+      const entries = allRecords.filter(r => r.orderId === orderId);
+      let totalIncome = 0, totalExpense = 0;
 
-      try {
-        for (const type of ["income", "expense"]) {
-          const snap = await db.collection("orders").doc(orderId).collection(type).get();
-          snap.forEach(doc => {
-            const data = doc.data();
-            entries.push({ type, ...data });
-            if (type === 'income') totalIncome += data.amount;
-            else totalExpense += data.amount;
-          });
-        }
+      entries.forEach(e => {
+        if (e.type === 'income') totalIncome += e.amount;
+        else totalExpense += e.amount;
+      });
 
-        entries.sort((a, b) => new Date(a.date) - new Date(b.date));
-        let html = `<h2>订单详情：${orderId}</h2>`;
-        html += `<p>总收入：<b>${totalIncome}</b> 元 | 总支出：<b>${totalExpense}</b> 元 | 利润：<b>${totalIncome - totalExpense}</b> 元</p>`;
-        html += '<table><tr><th>类型</th><th>金额</th><th>备注</th><th>时间</th></tr>';
-        entries.forEach(item => {
-          html += `<tr>
-                     <td>${item.type === 'income' ? '收入' : '支出'}</td>
-                     <td>${item.amount}</td>
-                     <td>${item.note}</td>
-                     <td>${new Date(item.date).toLocaleString()}</td>
-                   </tr>`;
-        });
-        html += '</table>';
-        container.innerHTML = html;
-      } catch (error) {
-        console.error("❌ 加载明细失败:", error);
-        container.innerHTML = '<p style="color:red">无法加载订单明细，请稍后重试。</p>';
-      }
+      let html = `<h2>订单详情：${orderId}</h2>`;
+      html += `<p>总收入：<b>${totalIncome}</b> 元 | 总支出：<b>${totalExpense}</b> 元 | 利润：<b>${totalIncome - totalExpense}</b> 元</p>`;
+      html += '<table><tr><th>类型</th><th>金额</th><th>备注</th><th>时间</th></tr>';
+      entries.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(item => {
+        html += `<tr>
+                   <td>${item.type === 'income' ? '收入' : '支出'}</td>
+                   <td>${item.amount}</td>
+                   <td>${item.note}</td>
+                   <td>${new Date(item.date).toLocaleString()}</td>
+                 </tr>`;
+      });
+      html += '</table>';
+      document.getElementById('details').innerHTML = html;
     }
 
-    // 页面加载完毕后立即列出现有订单
-    displayRecords();
+    // 页面加载完毕后先展示
+    window.onload = displayRecords;
   </script>
 </body>
 </html>
