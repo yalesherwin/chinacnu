@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CHINACNU 收支记录系统 (Firestore版)</title>
+  <title>CHINACNU Steel - 收支记录系统（Firestore）</title>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <style>
@@ -68,6 +68,7 @@
   </div>
 
   <script>
+    // ====== Firebase 初始化 ======
     const firebaseConfig = {
       apiKey: "AIzaSyBCpgUUSWPRYVtRfk15OQTHYHPNT5LLuqU",
       authDomain: "zhichu-a068a.firebaseapp.com",
@@ -79,12 +80,13 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
+    // ====== 添加记录：先创建/更新父文档，再写入子集合 ======
     async function addRecord() {
       const orderId = document.getElementById('orderId').value.trim();
-      const type = document.getElementById('type').value;
-      const amount = parseFloat(document.getElementById('amount').value);
-      const note = document.getElementById('note').value.trim();
-      const date = new Date().toISOString();
+      const type    = document.getElementById('type').value;
+      const amount  = parseFloat(document.getElementById('amount').value);
+      const note    = document.getElementById('note').value.trim();
+      const date    = new Date().toISOString();
 
       if (!orderId || isNaN(amount)) {
         alert('请输入订单名称和有效金额');
@@ -92,15 +94,22 @@
       }
 
       try {
-        await db.collection("orders").doc(orderId).collection(type).add({ amount, note, date });
+        // 1. 确保父文档存在（用于列表展示）
+        const orderRef = db.collection("orders").doc(orderId);
+        await orderRef.set({ lastUpdate: date }, { merge: true });
+
+        // 2. 写入子集合（income 或 expense）
+        await orderRef.collection(type).add({ amount, note, date });
+
         alert("✅ 记录已保存");
         displayRecords();
       } catch (error) {
-        console.error("❌ 添加失败:", error);
-        alert("❌ 添加记录失败，请检查控制台或数据库权限");
+        console.error("❌ 添加失败，错误详情：", error);
+        alert("❌ 添加记录失败，请查看控制台");
       }
     }
 
+    // ====== 列出所有订单（父文档） ======
     async function displayRecords() {
       const container = document.getElementById('records');
       try {
@@ -117,6 +126,7 @@
       }
     }
 
+    // ====== 显示某个订单的明细（收入/支出条目） ======
     async function showDetails(orderId) {
       const container = document.getElementById('details');
       let entries = [];
@@ -139,7 +149,12 @@
         html += `<p>总收入：<b>${totalIncome}</b> 元 | 总支出：<b>${totalExpense}</b> 元 | 利润：<b>${totalIncome - totalExpense}</b> 元</p>`;
         html += '<table><tr><th>类型</th><th>金额</th><th>备注</th><th>时间</th></tr>';
         entries.forEach(item => {
-          html += `<tr><td>${item.type === 'income' ? '收入' : '支出'}</td><td>${item.amount}</td><td>${item.note}</td><td>${new Date(item.date).toLocaleString()}</td></tr>`;
+          html += `<tr>
+                     <td>${item.type === 'income' ? '收入' : '支出'}</td>
+                     <td>${item.amount}</td>
+                     <td>${item.note}</td>
+                     <td>${new Date(item.date).toLocaleString()}</td>
+                   </tr>`;
         });
         html += '</table>';
         container.innerHTML = html;
@@ -149,6 +164,7 @@
       }
     }
 
+    // 页面加载完毕后立即列出现有订单
     displayRecords();
   </script>
 </body>
