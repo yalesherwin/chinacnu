@@ -7,82 +7,41 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <style>
-    body {
-      font-family: 'Roboto', '微软雅黑', sans-serif;
-      margin: 0;
-      padding: 0;
-      background: #f4f7fa;
-    }
-    .container {
-      max-width: 960px;
-      margin: auto;
-      padding: 20px;
-      background: #fff;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
-    }
-    h1, h2, h3 {
-      color: #1a237e;
-      margin-bottom: 10px;
-    }
-    input, select, button {
-      padding: 8px;
-      margin: 4px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-    }
-    button {
-      cursor: pointer;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 10px;
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 8px;
-      text-align: left;
-    }
-    th {
-      background-color: #e3f2fd;
-    }
-    .order-link {
-      color: #1a73e8;
-      cursor: pointer;
-      text-decoration: underline;
-    }
-    .form-inline {
-      margin-top: 12px;
-      padding: 8px;
-      background: #f9f9f9;
-      border-radius: 6px;
-    }
+    body { font-family: 'Roboto','微软雅黑',sans-serif; margin:0; padding:0; background:#f4f7fa; }
+    .container { max-width:960px; margin:20px auto; padding:20px; background:#fff; border-radius:10px; box-shadow:0 0 10px rgba(0,0,0,0.1); }
+    h1,h2,h3 { color:#1a237e; margin: 10px 0; }
+    .form-inline { margin:12px 0; padding:8px; background:#f9f9f9; border-radius:6px; }
+    input, select, button { padding:8px; margin:4px; border:1px solid #ccc; border-radius:6px; }
+    button { cursor:pointer; }
+    table { width:100%; border-collapse:collapse; margin-top:10px;}
+    th,td { border:1px solid #ccc; padding:8px; text-align:left; }
+    th { background:#e3f2fd; }
+    .order-link { color:#1a73e8; cursor:pointer; text-decoration:underline; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>CHINACNU Steel - 收支记录系统（扁平版）</h1>
-    <!-- 顶部添加任意订单记录 -->
+
+    <!-- 全局添加记录表单 -->
     <div class="form-inline">
+      <h3>添加新记录</h3>
       <input id="orderId" placeholder="订单名称">
-      <select id="type">
-        <option value="income">收入</option>
-        <option value="expense">支出</option>
-      </select>
+      <select id="type"><option value="income">收入</option><option value="expense">支出</option></select>
       <input id="amount" type="number" placeholder="金额">
       <input id="note" placeholder="备注">
+      <input id="contractDetail" placeholder="合同明细">
       <button onclick="addRecord()">添加记录</button>
     </div>
 
-    <!-- 左侧订单列表 -->
+    <!-- 订单列表 -->
     <div id="records"></div>
-    <!-- 右侧订单详情 & 新增表单 -->
+    <!-- 订单详情 + 专属添加 + 编辑表单容器 -->
     <div id="details"></div>
   </div>
 
   <script>
-    // —— Firebase 初始化 ——
+    // ====== Firebase 初始化 ======
     const firebaseConfig = {
       apiKey: "AIzaSyBCpgUUSWPRYVtRfk15OQTHYHPNT5LLuqU",
       authDomain: "zhichu-a068a.firebaseapp.com",
@@ -94,16 +53,18 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    // 本地缓存所有记录
+    // 本地缓存
     let allRecords = [];
+    let currentOrderId = null;
 
-    // 顶部表单：添加任意订单记录
+    /** 全局添加记录 */
     async function addRecord() {
-      const orderId = document.getElementById('orderId').value.trim();
-      const type    = document.getElementById('type').value;
-      const amount  = parseFloat(document.getElementById('amount').value);
-      const note    = document.getElementById('note').value.trim();
-      const date    = new Date().toISOString();
+      const orderId        = document.getElementById('orderId').value.trim();
+      const type           = document.getElementById('type').value;
+      const amount         = parseFloat(document.getElementById('amount').value);
+      const note           = document.getElementById('note').value.trim();
+      const contractDetail = document.getElementById('contractDetail').value.trim();
+      const date           = new Date().toISOString();
 
       if (!orderId || isNaN(amount)) {
         alert('请输入订单名称和有效金额');
@@ -111,7 +72,7 @@
       }
 
       try {
-        await db.collection("records").add({ orderId, type, amount, note, date });
+        await db.collection("records").add({ orderId, type, amount, note, contractDetail, date });
         alert("✅ 记录已保存");
         displayRecords();
       } catch (error) {
@@ -120,72 +81,76 @@
       }
     }
 
-    // 订单列表 & 缓存刷新
+    /** 拉取并渲染订单列表 */
     async function displayRecords() {
       try {
         const snap = await db.collection("records").get();
-        allRecords = snap.docs.map(doc => doc.data());
-        const orderIds = [...new Set(allRecords.map(r => r.orderId))];
-        
+        allRecords = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const orderIds = [...new Set(allRecords.map(r=> r.orderId))];
+
         let html = '<table><tr><th>订单</th></tr>';
         orderIds.forEach(id => {
           html += `<tr><td><span class="order-link" onclick="showDetails('${id}')">${id}</span></td></tr>`;
         });
         html += '</table>';
         document.getElementById('records').innerHTML = html;
-        // 清空详情区
         document.getElementById('details').innerHTML = '';
       } catch (error) {
         console.error("❌ 加载订单失败：", error);
-        document.getElementById('records').innerHTML =
-          '<p style="color:red">无法加载订单，请检查网络或权限设置。</p>';
+        document.getElementById('records').innerHTML = '<p style="color:red">无法加载订单</p>';
       }
     }
 
-    // 显示订单详情 & 在下方追加“添加新记录”表单
+    /**
+     * 显示指定订单详情
+     * 并在下方渲染“为该订单添加记录”的表单
+     */
     function showDetails(orderId) {
-      const entries = allRecords.filter(r => r.orderId === orderId);
+      currentOrderId = orderId;
+      const entries = allRecords.filter(r=> r.orderId === orderId);
       let totalIncome = 0, totalExpense = 0;
+      entries.forEach(e => e.type==='income' ? totalIncome+=e.amount : totalExpense+=e.amount);
 
-      entries.forEach(e => {
-        if (e.type === 'income') totalIncome += e.amount;
-        else totalExpense += e.amount;
+      let html = `<h2>订单详情：${orderId}</h2>
+        <p>总收入：<b>${totalIncome}</b> 元 | 总支出：<b>${totalExpense}</b> 元 | 利润：<b>${totalIncome - totalExpense}</b> 元</p>
+        <table>
+          <tr>
+            <th>类型</th><th>金额</th><th>备注</th><th>合同明细</th><th>时间</th><th>操作</th>
+          </tr>`;
+      entries.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(item => {
+        html += `<tr id="row-${item.id}">
+                   <td>${item.type==='income'?'收入':'支出'}</td>
+                   <td>${item.amount}</td>
+                   <td>${item.note}</td>
+                   <td>${item.contractDetail||''}</td>
+                   <td>${new Date(item.date).toLocaleString()}</td>
+                   <td><button onclick="startEdit('${item.id}')">编辑</button></td>
+                 </tr>`;
       });
+      html += `</table>`;
 
-      let html = `<h2>订单详情：${orderId}</h2>`;
-      html += `<p>总收入：<b>${totalIncome}</b> 元 &nbsp;|&nbsp; 总支出：<b>${totalExpense}</b> 元 &nbsp;|&nbsp; 利润：<b>${totalIncome - totalExpense}</b> 元</p>`;
-      html += '<table><tr><th>类型</th><th>金额</th><th>备注</th><th>时间</th></tr>';
-      entries
-        .sort((a,b) => new Date(a.date) - new Date(b.date))
-        .forEach(item => {
-          html += `<tr>
-                     <td>${item.type === 'income' ? '收入' : '支出'}</td>
-                     <td>${item.amount}</td>
-                     <td>${item.note}</td>
-                     <td>${new Date(item.date).toLocaleString()}</td>
-                   </tr>`;
-        });
-      html += '</table>';
-
-      // —— 在详情下方追加一个专属该订单的新记录表单 —— 
+      // 追加：为该订单添加新记录的表单
       html += `
         <div class="form-inline">
           <h3>为订单 ${orderId} 添加记录</h3>
           <select id="newType"><option value="income">收入</option><option value="expense">支出</option></select>
           <input id="newAmount" type="number" placeholder="金额">
           <input id="newNote" placeholder="备注">
-          <button onclick="addRecordToOrder('${orderId}')">添加记录</button>
+          <input id="newContractDetail" placeholder="合同明细">
+          <button onclick="addRecordToOrder()">添加记录</button>
         </div>`;
 
       document.getElementById('details').innerHTML = html;
     }
 
-    // 专属某个订单的新记录添加
-    async function addRecordToOrder(orderId) {
-      const type   = document.getElementById('newType').value;
-      const amount = parseFloat(document.getElementById('newAmount').value);
-      const note   = document.getElementById('newNote').value.trim();
-      const date   = new Date().toISOString();
+    /** 为当前订单添加新记录 */
+    async function addRecordToOrder() {
+      const orderId        = currentOrderId;
+      const type           = document.getElementById('newType').value;
+      const amount         = parseFloat(document.getElementById('newAmount').value);
+      const note           = document.getElementById('newNote').value.trim();
+      const contractDetail = document.getElementById('newContractDetail').value.trim();
+      const date           = new Date().toISOString();
 
       if (isNaN(amount)) {
         alert('请输入有效金额');
@@ -193,9 +158,8 @@
       }
 
       try {
-        await db.collection("records").add({ orderId, type, amount, note, date });
+        await db.collection("records").add({ orderId, type, amount, note, contractDetail, date });
         alert("✅ 新记录已保存");
-        // 重新刷新列表和详情
         await displayRecords();
         showDetails(orderId);
       } catch (error) {
@@ -204,7 +168,62 @@
       }
     }
 
-    // 初始加载
+    /** 弹出编辑表单 */
+    function startEdit(recordId) {
+      // 删除已有的编辑表单
+      const old = document.getElementById('editForm');
+      if (old) old.remove();
+
+      const rec = allRecords.find(r => r.id === recordId);
+      const detailDiv = document.getElementById('details');
+      const formHtml = `
+        <div id="editForm" class="form-inline">
+          <h3>编辑记录 (${recordId})</h3>
+          <select id="editType">
+            <option value="income" ${rec.type==='income'?'selected':''}>收入</option>
+            <option value="expense" ${rec.type==='expense'?'selected':''}>支出</option>
+          </select>
+          <input id="editAmount" type="number" value="${rec.amount}">
+          <input id="editNote" value="${rec.note}">
+          <input id="editContractDetail" value="${rec.contractDetail||''}" placeholder="合同明细">
+          <button onclick="updateRecord('${recordId}')">保存</button>
+          <button onclick="cancelEdit()">取消</button>
+        </div>`;
+      detailDiv.insertAdjacentHTML('beforeend', formHtml);
+    }
+
+    /** 取消编辑 */
+    function cancelEdit() {
+      const old = document.getElementById('editForm');
+      if (old) old.remove();
+    }
+
+    /** 提交更新 */
+    async function updateRecord(recordId) {
+      const type           = document.getElementById('editType').value;
+      const amount         = parseFloat(document.getElementById('editAmount').value);
+      const note           = document.getElementById('editNote').value.trim();
+      const contractDetail = document.getElementById('editContractDetail').value.trim();
+
+      if (isNaN(amount)) {
+        alert('请输入有效金额');
+        return;
+      }
+
+      try {
+        await db.collection("records").doc(recordId)
+           .update({ type, amount, note, contractDetail });
+        alert("✅ 保存成功");
+        cancelEdit();
+        await displayRecords();
+        showDetails(currentOrderId);
+      } catch (error) {
+        console.error("❌ 更新失败：", error);
+        alert("❌ 更新失败，请查看控制台");
+      }
+    }
+
+    // 页面加载完成后初始化
     window.onload = displayRecords;
   </script>
 </body>
