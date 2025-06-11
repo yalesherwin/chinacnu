@@ -3,8 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CHINACNU Steel - 收支记录系统（扁平＋附件）</title>
-  <!-- Firebase SDKs -->
+  <title>CHINACNU Steel - 收支记录系统（含附件＋调试）</title>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
@@ -12,10 +11,10 @@
     body { font-family:'Roboto','微软雅黑',sans-serif; background:#f4f7fa; margin:0; }
     .container { max-width:960px; margin:20px auto; padding:20px; background:#fff;
                  border-radius:10px; box-shadow:0 0 10px rgba(0,0,0,0.1); }
-    h1,h2,h3 { color:#1a237e; margin:8px 0; }
     .form-inline { margin:12px 0; padding:8px; background:#f9f9f9; border-radius:6px; }
     input, select, button { padding:8px; margin:4px; border:1px solid #ccc; border-radius:6px; }
     button { cursor:pointer; }
+    #uploadStatus { margin-top:8px; color:#1a237e; }
     table { width:100%; border-collapse:collapse; margin-top:10px; }
     th,td { border:1px solid #ccc; padding:8px; text-align:left; }
     th { background:#e3f2fd; }
@@ -25,7 +24,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>CHINACNU Steel - 收支记录系统（扁平＋附件）</h1>
+    <h1>CHINACNU Steel - 收支记录系统（调试版）</h1>
 
     <!-- 全局添加记录 -->
     <div class="form-inline">
@@ -34,48 +33,54 @@
       <select id="type"><option value="income">收入</option><option value="expense">支出</option></select>
       <input id="amount" type="number" placeholder="金额">
       <input id="note" placeholder="备注">
-      <!-- 上传合同明细附件 -->
-      <input id="contractFiles" type="file" multiple
-             accept=".doc,.docx,.xls,.xlsx,.pdf,image/*">
+      <input id="contractFiles" type="file" multiple accept=".doc,.docx,.xls,.xlsx,.pdf,image/*">
       <button onclick="addRecord()">添加记录</button>
+      <div id="uploadStatus"></div>
     </div>
 
     <!-- 订单列表 -->
     <div id="records"></div>
-    <!-- 订单详情 + 专属添加 + 编辑表单 -->
+    <!-- 订单详情 -->
     <div id="details"></div>
   </div>
 
   <script>
-    // ====== Firebase 初始化 ======
-    const firebaseConfig = {
-      apiKey: "AIzaSyBCpgUUSWPRYVtRfk15OQTHYHPNT5LLuqU",
-      authDomain: "zhichu-a068a.firebaseapp.com",
-      projectId: "zhichu-a068a",
-      storageBucket: "zhichu-a068a.appspot.com",
-      messagingSenderId: "970820346863",
-      appId: "1:970820346863:web:89c157766965483124c1a"
-    };
+    // —— Firebase 初始化 —— 
+    const firebaseConfig = { /* 你的配置 */ };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
     const storage = firebase.storage();
 
-    let allRecords = [];
-    let currentOrderId = null;
+    let allRecords = [], currentOrderId = null;
 
-    /** 上传文件数组，返回 [{name, url}, ...] */
+    /** 显示进度状态 */
+    function setStatus(text) {
+      document.getElementById('uploadStatus').innerText = text;
+      console.log('[状态]', text);
+    }
+
+    /** 上传文件数组，返回 [{name,url},...] */
     async function uploadFiles(recordId, files) {
       const uploaded = [];
       for (let file of files) {
-        const ref = storage.ref().child(`contractDetails/${recordId}/${file.name}`);
-        await ref.put(file);
-        const url = await ref.getDownloadURL();
-        uploaded.push({ name: file.name, url });
+        setStatus(`正在上传 ${file.name} ...`);
+        console.log('uploadFiles ⬆️', file);
+        const ref = storage.ref(`contractDetails/${recordId}/${file.name}`);
+        try {
+          await ref.put(file);
+          const url = await ref.getDownloadURL();
+          console.log('已上传并拿到 URL:', url);
+          uploaded.push({ name: file.name, url });
+        } catch (e) {
+          console.error('⚠️ 上传出错：', file.name, e);
+          alert(`上传 ${file.name} 失败：${e.message}`);
+        }
       }
+      setStatus('所有文件上传完毕');
       return uploaded;
     }
 
-    /** 全局添加记录 */
+    /** 添加记录（带文件上传） */
     async function addRecord() {
       const orderId = document.getElementById('orderId').value.trim();
       const type    = document.getElementById('type').value;
@@ -88,183 +93,89 @@
         alert('请输入订单名称和有效金额');
         return;
       }
+      setStatus('开始写入 Firestore 文档...');
+      console.log('addRecord()', { orderId, type, amount, note, files });
 
       try {
-        // 1) 先创建空文档以获取 ID
+        // 1. 先建文档拿 ID
         const docRef = await db.collection("records").add({
           orderId, type, amount, note, date, contractFiles: []
         });
-        // 2) 上传文件并更新 contractFiles 字段
+        console.log('Firestore 文档已创建，ID =', docRef.id);
+
+        // 2. 如果有文件，上传它们并更新 contractFiles
         if (files.length > 0) {
-          const up = await uploadFiles(docRef.id, files);
-          await docRef.update({ contractFiles: up });
+          const uploaded = await uploadFiles(docRef.id, files);
+          console.log('准备 update contractFiles:', uploaded);
+          await docRef.update({ contractFiles: uploaded });
         }
 
-        alert("✅ 记录已保存");
-        document.getElementById('contractFiles').value = null;
+        alert('✅ 记录及附件已保存');
+        setStatus('保存完成');
+        document.getElementById('contractFiles').value = '';
         displayRecords();
       } catch (e) {
-        console.error(e);
-        alert("❌ 保存失败");
+        console.error('❌ addRecord 全局异常：', e);
+        alert('保存失败，请查看控制台');
+        setStatus('保存失败');
       }
     }
 
     /** 拉取并渲染订单列表 */
     async function displayRecords() {
-      const snap = await db.collection("records").get();
-      allRecords = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const orderIds = [...new Set(allRecords.map(r => r.orderId))];
-
-      let html = '<table><tr><th>订单</th></tr>';
-      orderIds.forEach(id => {
-        html += `<tr><td><span class="order-link" onclick="showDetails('${id}')">${id}</span></td></tr>`;
-      });
-      html += '</table>';
-      document.getElementById('records').innerHTML = html;
-      document.getElementById('details').innerHTML = '';
+      try {
+        const snap = await db.collection("records").get();
+        allRecords = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const orderIds = [...new Set(allRecords.map(r=>r.orderId))];
+        let html = '<table><tr><th>订单</th></tr>';
+        orderIds.forEach(id => {
+          html += `<tr><td>
+                     <span class="order-link" onclick="showDetails('${id}')">${id}</span>
+                   </td></tr>`;
+        });
+        html += '</table>';
+        document.getElementById('records').innerHTML = html;
+        document.getElementById('details').innerHTML = '';
+      } catch (e) {
+        console.error('❌ displayRecords 异常：', e);
+      }
     }
 
-    /** 显示订单详情 */
+    /** 显示订单详情（不含专属添加/编辑） */
     function showDetails(orderId) {
       currentOrderId = orderId;
-      const recs = allRecords.filter(r => r.orderId === orderId);
-      let income = 0, expense = 0;
-      recs.forEach(r => r.type==='income'? income+=r.amount : expense+=r.amount);
+      const recs = allRecords.filter(r=>r.orderId===orderId);
+      let income=0, expense=0;
+      recs.forEach(r=> r.type==='income'? income+=r.amount:expense+=r.amount);
 
-      let html = `
-        <h2>订单详情：${orderId}</h2>
+      let html = `<h2>订单详情：${orderId}</h2>
         <p>总收入：<b>${income}</b> 元 | 总支出：<b>${expense}</b> 元 | 利润：<b>${income-expense}</b> 元</p>
         <table>
-          <tr>
-            <th>类型</th><th>金额</th><th>备注</th><th>附件</th><th>时间</th><th>操作</th>
-          </tr>`;
-      recs.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(r => {
-        // 渲染附件列表
+          <tr><th>类型</th><th>金额</th><th>备注</th><th>附件</th><th>时间</th></tr>`;
+      recs.sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(r=>{
         let filesHtml = '';
-        if (r.contractFiles && r.contractFiles.length) {
-          filesHtml = '<div class="files-list">' +
-            r.contractFiles.map(f => 
-              `<a href="${f.url}" target="_blank" download>${f.name}</a>`
-            ).join('') +
-            '</div>';
+        if (r.contractFiles?.length) {
+          filesHtml = r.contractFiles.map(f=>
+            `<a href="${f.url}" target="_blank" download>${f.name}</a>`
+          ).join(' ');
         }
-        html += `
-          <tr id="row-${r.id}">
-            <td>${r.type==='income'?'收入':'支出'}</td>
-            <td>${r.amount}</td>
-            <td>${r.note}</td>
-            <td>${filesHtml}</td>
-            <td>${new Date(r.date).toLocaleString()}</td>
-            <td><button onclick="startEdit('${r.id}')">编辑</button></td>
-          </tr>`;
+        html += `<tr>
+                   <td>${r.type==='income'?'收入':'支出'}</td>
+                   <td>${r.amount}</td>
+                   <td>${r.note}</td>
+                   <td>${filesHtml}</td>
+                   <td>${new Date(r.date).toLocaleString()}</td>
+                 </tr>`;
       });
-      html += `</table>`;
-
-      // 追加：为该订单添加新记录的表单
-      html += `
-        <div class="form-inline">
-          <h3>为订单 ${orderId} 添加记录</h3>
-          <select id="newType"><option value="income">收入</option><option value="expense">支出</option></select>
-          <input id="newAmount" type="number" placeholder="金额">
-          <input id="newNote" placeholder="备注">
-          <input id="newContractFiles" type="file" multiple accept=".doc,.docx,.xls,.xlsx,.pdf,image/*">
-          <button onclick="addRecordToOrder()">添加记录</button>
-        </div>`;
-
+      html += '</table>';
       document.getElementById('details').innerHTML = html;
     }
 
-    /** 为当前订单添加新记录 */
-    async function addRecordToOrder() {
-      const type  = document.getElementById('newType').value;
-      const amt   = parseFloat(document.getElementById('newAmount').value);
-      const note  = document.getElementById('newNote').value.trim();
-      const files = document.getElementById('newContractFiles').files;
-      const date  = new Date().toISOString();
-
-      if (isNaN(amt)) { alert('请输入有效金额'); return; }
-
-      try {
-        const docRef = await db.collection("records").add({
-          orderId: currentOrderId, type, amount:amt, note, date, contractFiles: []
-        });
-        if (files.length>0) {
-          const up = await uploadFiles(docRef.id, files);
-          await docRef.update({ contractFiles: up });
-        }
-        alert("✅ 新记录已保存");
-        displayRecords();
-        showDetails(currentOrderId);
-      } catch(e) {
-        console.error(e);
-        alert("❌ 保存失败");
-      }
-    }
-
-    /** 弹出编辑表单（允许修改文字字段 & 追加附件） */
-    function startEdit(id) {
-      // 移除旧表单
-      const old = document.getElementById('editForm');
-      if (old) old.remove();
-
-      const r = allRecords.find(x=>x.id===id);
-      const div = document.getElementById('details');
-      const form = document.createElement('div');
-      form.id = 'editForm';
-      form.className = 'form-inline';
-      form.innerHTML = `
-        <h3>编辑记录</h3>
-        <select id="editType">
-          <option value="income" ${r.type==='income'?'selected':''}>收入</option>
-          <option value="expense" ${r.type==='expense'?'selected':''}>支出</option>
-        </select>
-        <input id="editAmount" type="number" value="${r.amount}">
-        <input id="editNote" value="${r.note}">
-        <!-- 追加附件 -->
-        <input id="editContractFiles" type="file" multiple accept=".doc,.docx,.xls,.xlsx,.pdf,image/*">
-        <button onclick="updateRecord('${id}')">保存</button>
-        <button onclick="cancelEdit()">取消</button>
-      `;
-      div.appendChild(form);
-    }
-
-    function cancelEdit() {
-      const old = document.getElementById('editForm');
-      if (old) old.remove();
-    }
-
-    /** 提交更新（并追加新附件） */
-    async function updateRecord(id) {
-      const type  = document.getElementById('editType').value;
-      const amt   = parseFloat(document.getElementById('editAmount').value);
-      const note  = document.getElementById('editNote').value.trim();
-      const files = document.getElementById('editContractFiles').files;
-
-      if (isNaN(amt)) { alert('请输入有效金额'); return; }
-
-      try {
-        const docRef = db.collection("records").doc(id);
-        // 更新文字字段
-        await docRef.update({ type, amount:amt, note });
-        // 如果有新附件，则上传并追加到数组
-        if (files.length>0) {
-          const up = await uploadFiles(id, files);
-          await docRef.update({
-            contractFiles: firebase.firestore.FieldValue.arrayUnion(...up)
-          });
-        }
-        alert("✅ 更新成功");
-        cancelEdit();
-        displayRecords();
-        showDetails(currentOrderId);
-      } catch(e) {
-        console.error(e);
-        alert("❌ 更新失败");
-      }
-    }
-
     // 初始化
-    window.onload = displayRecords;
+    window.onload = () => {
+      displayRecords();
+      setStatus('就绪，等待操作');
+    };
   </script>
 </body>
 </html>
